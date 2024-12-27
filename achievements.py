@@ -241,3 +241,5 @@ class AchievementManager:
             self.unlock_achievement(user_id, 3)  # "Смерть"
         elif event == "first_death":
             self.unlock_achievement(user_id, 4)  # "Первая смерть"
+        elif event == "first_item":
+            self.unlock_achievement(user_id, 5)  # "Коллекционер"

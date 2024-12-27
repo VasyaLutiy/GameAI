@@ -6,13 +6,62 @@ from telegram.ext import ContextTypes
 from db_manager import DatabaseManager
 from achievements import AchievementManager
 from game_logic import GameLogic
+from inventory import InventoryManager
 
 class GameMaster:
     def __init__(self, db: DatabaseManager):
         self.db = db
         self.logger = logging.getLogger(__name__)
+        
+        # Таблицы по умолчанию
+        self.users_table = "users"
+        self.scenes_table = "scenes"
+        self.user_states_table = "user_states"
+        
+        # Инициализация менеджеров
         self.achievement_manager = AchievementManager(db)
         self.game_logic = GameLogic(db)
+        self.inventory_manager = InventoryManager(db)
+
+    async def cmd_inventory(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Обработчик команды /inventory"""
+        user_id = update.effective_user.id
+        self.logger.info(f"User {user_id} requested inventory")
+        
+        inventory = self.inventory_manager.get_inventory(user_id)
+        if inventory:
+            message = "🎒 Ваш инвентарь:\n\n"
+            current_type = None
+            
+            for item in inventory:
+                item_data = item['item']
+                if current_type != item_data['type']:
+                    current_type = item_data['type']
+                    message += f"\n📦 {current_type.capitalize()}:\n"
+                
+                message += (
+                    f"{item_data['icon']} {item_data['name']} (x{item['quantity']})\n"
+                    f"  ├ {item_data['description']}\n"
+                )
+                
+                # Добавляем свойства предмета, если они есть
+                if item_data['properties']:
+                    props = []
+                    for key, value in item_data['properties'].items():
+                        if isinstance(value, bool):
+                            props.append(key)
+                        else:
+                            props.append(f"{key}: {value}")
+                    message += f"  └ {', '.join(props)}\n"
+                else:
+                    message += "  └ Нет особых свойств\n"
+            
+            await update.message.reply_text(message)
+        else:
+            await update.message.reply_text(
+                "🎒 Ваш инвентарь пуст.\n"
+                "Исследуйте мир, чтобы найти полезные предметы!"
+            )
         
         # Таблицы по умолчанию
         self.users_table = "users"
@@ -165,6 +214,21 @@ class GameMaster:
         """Обработчик выбора опции в игре"""
         query = update.callback_query
         user_id = query.from_user.id
+
+        async def give_item(item_id: int, quantity: int = 1, silent: bool = False) -> bool:
+            """Выдает предмет игроку"""
+            if self.inventory_manager.add_item(user_id, item_id, quantity):
+                # Проверяем достижение за первый предмет
+                inventory = self.inventory_manager.get_inventory(user_id)
+                if len(inventory) == 1:  # Если это первый предмет
+                    self.achievement_manager.check_achievements(user_id, "first_item")
+                
+                if not silent:
+                    item = self.inventory_manager.get_item(item_id)
+                    if item:
+                        await query.answer(f"Получен предмет: {item.name} (x{quantity})")
+                return True
+            return False
         
         try:
             choice_id = int(query.data.split('_')[1])
@@ -211,6 +275,18 @@ class GameMaster:
             
             reply_markup = InlineKeyboardMarkup(keyboard) if keyboard else None
             
+            # Выдаем предметы в зависимости от выбора и сцены
+            if "гвоздь" in current_scene.get('description', '').lower() and choice_id == 5:
+                await give_item(6)  # Ржавый меч
+            elif "forge" in current_scene.get('description', '').lower():
+                await give_item(7)  # Кожаная броня
+            elif "healing" in current_scene.get('description', '').lower():
+                await give_item(8, 2)  # Два зелья лечения
+            elif "ancient" in current_scene.get('description', '').lower():
+                await give_item(9)  # Старый ключ
+            elif "map" in current_scene.get('description', '').lower():
+                await give_item(10)  # Карта подземелья
+
             await query.answer()
             message_text = new_scene['description']
             if new_scene.get('is_death_scene'):
