@@ -8,6 +8,8 @@ class GameMaster:
     def __init__(self, db: DatabaseManager):
         self.db = db
         self.logger = logging.getLogger(__name__)
+        from achievements import AchievementManager
+        self.achievement_manager = AchievementManager(db)
 
     async def get_current_scene(self, user_id: int) -> dict:
         """Получает текущую сцену для пользователя"""
@@ -56,6 +58,9 @@ class GameMaster:
         ON DUPLICATE KEY UPDATE state = '1'
         """
         self.db.execute_query(query, (user_id,))
+        
+        # Проверяем достижение за начало игры
+        self.achievement_manager.check_achievements(user_id, "game_start")
         
         # Получаем и показываем первую сцену
         scene = await self.get_current_scene(user_id)
@@ -161,6 +166,9 @@ class GameMaster:
             choice_id = int(query.data.split('_')[1])
             self.logger.info(f"User {user_id} made choice: {choice_id}")
             
+            # Получаем текущую сцену перед обновлением
+            current_scene = await self.get_current_scene(user_id)
+            
             # Обновляем состояние пользователя
             update_query = """
             UPDATE user_states 
@@ -168,6 +176,20 @@ class GameMaster:
             WHERE user_id = %s
             """
             self.db.execute_query(update_query, (choice_id, user_id))
+            
+            # Проверяем различные условия для достижений
+            if current_scene:
+                # Проверяем, является ли сцена "смертельной"
+                if "death" in current_scene.get('description', '').lower():
+                    self.achievement_manager.check_achievements(user_id, "death")
+                
+                # Проверяем завершение квеста
+                if not current_scene.get('options'):
+                    self.achievement_manager.check_achievements(user_id, "game_complete")
+                
+                # Проверяем исследование новых локаций
+                self.achievement_manager.check_achievements(user_id, "explore_location", 
+                    {"location_id": choice_id})
             
             # Получаем новую сцену
             new_scene = await self.get_current_scene(user_id)

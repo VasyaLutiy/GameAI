@@ -33,19 +33,42 @@ class DatabaseManager:
             self.logger.info("MySQL connection closed")
 
     def execute_query(self, query, params=None):
+        cursor = None
         try:
-            if self.connect():
-                cursor = self.connection.cursor()
-                if params:
-                    cursor.execute(query, params)
-                else:
-                    cursor.execute(query)
+            if not self.connect():
+                raise Exception("Failed to connect to database")
                 
-                if query.strip().upper().startswith(('INSERT', 'UPDATE', 'DELETE')):
-                    self.connection.commit()
-                    return cursor.rowcount
-                else:
-                    return cursor.fetchall()
+            cursor = self.connection.cursor()
+            self.logger.debug(f"Executing query: {query}")
+            self.logger.debug(f"Parameters: {params}")
+            
+            if params:
+                cursor.execute(query, params)
+            else:
+                cursor.execute(query)
+            
+            # Для DDL-запросов (CREATE, DROP и т.д.)
+            if query.strip().upper().startswith(('CREATE', 'DROP', 'ALTER')):
+                self.connection.commit()
+                return True
+            
+            # Для DML-запросов (INSERT, UPDATE, DELETE)
+            elif query.strip().upper().startswith(('INSERT', 'UPDATE', 'DELETE')):
+                self.connection.commit()
+                affected_rows = cursor.rowcount
+                self.logger.debug(f"Affected rows: {affected_rows}")
+                return affected_rows
+            
+            # Для SELECT и других запросов
+            else:
+                try:
+                    result = cursor.fetchall()
+                    self.logger.debug(f"Query result: {result}")
+                    return result
+                except mysql.connector.Error as e:
+                    if e.errno == mysql.connector.errorcode.CR_NO_RESULT_SET:
+                        return None
+                    raise e
         except Error as e:
             self.logger.error(f"Error executing query: {e}")
             return None
