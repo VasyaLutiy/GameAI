@@ -63,9 +63,10 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 /reset - Сбросить игру
 /help - Показать это сообщение
 
-📊 Достижения:
+📊 Достижения и инвентарь:
 /achievements - Показать ваши достижения
 /achprogress - Показать прогресс достижений
+/inventory - Показать ваш инвентарь
 
 Удачи в прохождении! 🍀
 """
@@ -83,6 +84,9 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def reset_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await game_master.cmd_reset(update, context)
+
+async def inventory_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await game_master.cmd_inventory(update, context)
 
 # Обработчик callback query для кнопок
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -123,9 +127,10 @@ def main():
     application.add_handler(CommandHandler("status", status_command))
     application.add_handler(CommandHandler("reset", reset_command))
     
-    # Добавляем обработчики достижений
+    # Добавляем обработчики достижений и инвентаря
     application.add_handler(CommandHandler("achievements", achievements_command))
     application.add_handler(CommandHandler("achprogress", achievement_progress_command))
+    application.add_handler(CommandHandler("inventory", inventory_command))
     
     # Добавляем обработчик callback query для кнопок
     application.add_handler(CallbackQueryHandler(button_handler))
