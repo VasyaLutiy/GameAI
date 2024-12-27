@@ -21,16 +21,23 @@ class AchievementManager:
         try:
             self.logger.info("Starting table initialization...")
             
-            # Создаем таблицы последовательно
+            # Проверяем существование таблиц
+            check_tables_query = """
+            SELECT COUNT(*) 
+            FROM information_schema.tables 
+            WHERE table_schema = 'game1' 
+            AND table_name IN ('achievements', 'user_achievements')
+            """
+            result = self.db.execute_query(check_tables_query)
+            if result and result[0][0] == 2:
+                self.logger.info("Achievement tables already exist")
+                return True
+
+            # Если таблиц нет, создаем их
+            self.logger.info("Creating achievement tables...")
             self.logger.info("Disabling foreign key checks...")
             result = self.db.execute_query("SET FOREIGN_KEY_CHECKS = 0")
             self.logger.debug(f"Foreign key check disable result: {result}")
-
-            self.logger.info("Dropping existing tables...")
-            result = self.db.execute_query("DROP TABLE IF EXISTS user_achievements")
-            self.logger.debug(f"Drop user_achievements result: {result}")
-            result = self.db.execute_query("DROP TABLE IF EXISTS achievements")
-            self.logger.debug(f"Drop achievements result: {result}")
 
             # Создаем таблицу достижений
             self.logger.info("Creating achievements table...")
@@ -231,4 +238,6 @@ class AchievementManager:
         elif event == "game_complete":
             self.unlock_achievement(user_id, 2)  # "Первое прохождение"
         elif event == "death":
-            self.unlock_achievement(user_id, 3)  # "Первая смерть"
+            self.unlock_achievement(user_id, 3)  # "Смерть"
+        elif event == "first_death":
+            self.unlock_achievement(user_id, 4)  # "Первая смерть"

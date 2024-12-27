@@ -1,50 +1,38 @@
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import CommandHandler, CallbackQueryHandler, ContextTypes
-from db_manager import DatabaseManager
 import logging
 import json
+from typing import Optional, Dict
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import ContextTypes
+from db_manager import DatabaseManager
+from achievements import AchievementManager
+from game_logic import GameLogic
 
 class GameMaster:
     def __init__(self, db: DatabaseManager):
         self.db = db
         self.logger = logging.getLogger(__name__)
-        from achievements import AchievementManager
         self.achievement_manager = AchievementManager(db)
+        self.game_logic = GameLogic(db)
+        
+        # Таблицы по умолчанию
+        self.users_table = "users"
+        self.scenes_table = "scenes"
+        self.user_states_table = "user_states"
 
-    async def get_current_scene(self, user_id: int) -> dict:
+    async def get_current_scene(self, user_id: int) -> Optional[Dict]:
         """Получает текущую сцену для пользователя"""
         try:
-            # Получаем текущее состояние пользователя
-            query = "SELECT state FROM user_states WHERE user_id = %s"
+            query = f"SELECT state FROM {self.user_states_table} WHERE user_id = %s"
             result = self.db.execute_query(query, (user_id,))
             
             if not result:
-                # Если состояния нет, начинаем с первой сцены
-                return self.get_scene(1)
+                return None
             
             scene_id = int(result[0][0])
-            return self.get_scene(scene_id)
+            return self.game_logic.get_scene(scene_id)
         except Exception as e:
             self.logger.error(f"Error getting current scene: {e}")
             return None
-
-    def get_scene(self, scene_id: int) -> dict:
-        """Получает сцену по ID"""
-        query = """
-        SELECT id, parent, description, options 
-        FROM scenes 
-        WHERE id = %s
-        """
-        result = self.db.execute_query(query, (scene_id,))
-        if result:
-            scene_data = result[0]
-            return {
-                'id': scene_data[0],
-                'parent': scene_data[1],
-                'description': scene_data[2],
-                'options': json.loads(scene_data[3]) if scene_data[3] else {}
-            }
-        return None
 
     async def cmd_play(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Обработчик команды /play"""
@@ -52,8 +40,8 @@ class GameMaster:
         self.logger.info(f"User {user_id} started new game")
         
         # Сбрасываем состояние пользователя на начальную сцену
-        query = """
-        INSERT INTO user_states (user_id, state) 
+        query = f"""
+        INSERT INTO {self.user_states_table} (user_id, state) 
         VALUES (%s, '1')
         ON DUPLICATE KEY UPDATE state = '1'
         """
@@ -66,7 +54,8 @@ class GameMaster:
         scene = await self.get_current_scene(user_id)
         if scene:
             keyboard = []
-            for option_id, option_text in scene['options'].items():
+            options = json.loads(scene['options']) if isinstance(scene['options'], str) else scene['options']
+            for option_id, option_text in options.items():
                 keyboard.append([InlineKeyboardButton(option_text, callback_data=f"choice_{option_id}")])
             
             reply_markup = InlineKeyboardMarkup(keyboard)
@@ -82,11 +71,11 @@ class GameMaster:
         user_id = update.effective_user.id
         self.logger.info(f"User {user_id} continues game")
         
-        # Получаем текущую сцену пользователя
         scene = await self.get_current_scene(user_id)
-        if scene:
+        if scene and not scene.get('is_death_scene'):
             keyboard = []
-            for option_id, option_text in scene['options'].items():
+            options = json.loads(scene['options']) if isinstance(scene['options'], str) else scene['options']
+            for option_id, option_text in options.items():
                 keyboard.append([InlineKeyboardButton(option_text, callback_data=f"choice_{option_id}")])
             
             reply_markup = InlineKeyboardMarkup(keyboard)
@@ -96,7 +85,8 @@ class GameMaster:
             )
         else:
             await update.message.reply_text(
-                "❌ Не найдено сохраненной игры. Используйте /play чтобы начать новую игру."
+                "❌ Не найдено сохраненной игры или ваш персонаж погиб.\n"
+                "Используйте /play чтобы начать новую игру."
             )
 
     async def cmd_status(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -104,24 +94,18 @@ class GameMaster:
         user_id = update.effective_user.id
         self.logger.info(f"User {user_id} requested status")
         
-        # Получаем информацию о текущем прогрессе
-        query = """
-        SELECT us.state, s.description, u.created_at
-        FROM user_states us
-        JOIN users u ON u.user_id = us.user_id
-        LEFT JOIN scenes s ON s.id = CAST(us.state AS SIGNED)
-        WHERE us.user_id = %s
-        """
-        result = self.db.execute_query(query, (user_id,))
-        
-        if result and result[0][0]:
-            scene_id, current_scene, start_date = result[0]
+        scene = await self.get_current_scene(user_id)
+        if scene:
             status_text = (
                 "📊 Статус вашей игры:\n\n"
-                f"🎯 Текущая сцена: {scene_id}\n"
-                f"📝 Описание: {current_scene[:100]}...\n"
-                f"📅 Начало игры: {start_date.strftime('%Y-%m-%d %H:%M')}\n"
+                f"🎯 Текущая сцена: {scene['id']}\n"
+                f"📝 Описание: {scene['description'][:100]}...\n"
             )
+            if scene.get('is_death_scene'):
+                status_text += "\n💀 Ваш персонаж погиб. Используйте /play для новой игры."
+            elif scene.get('npc_interaction'):
+                status_text += f"\n👥 Текущее взаимодействие: {scene['npc_interaction']}"
+            
             await update.message.reply_text(status_text)
         else:
             await update.message.reply_text(
@@ -129,23 +113,44 @@ class GameMaster:
                 "Используйте /play чтобы начать новую игру."
             )
 
+    async def cmd_achievements(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Обработчик команды /achievements"""
+        user_id = update.effective_user.id
+        self.logger.info(f"User {user_id} requested achievements")
+        
+        achievements = self.achievement_manager.get_user_achievements(user_id)
+        progress = self.achievement_manager.get_achievement_progress(user_id)
+        
+        if achievements:
+            message = "🏆 Ваши достижения:\n\n"
+            for ach in achievements:
+                # Преобразуем текстовые иконки в эмодзи
+                icon = {
+                    '[GAME]': '🎮',
+                    '[MAP]': '🗺️',
+                    '[SKULL]': '💀',
+                    '[DEATH]': '☠️'
+                }.get(ach['icon'], '•')
+                
+                message += f"{icon} {ach['name']} ({ach['points']} очков)\n"
+                message += f"  ├ {ach['description']}\n"
+                message += f"  └ Получено: {ach['unlocked_at'].strftime('%Y-%m-%d %H:%M')}\n\n"
+            
+            message += f"\n📊 Прогресс: {progress['unlocked']}/{progress['total']} ({progress['percentage']}%)"
+        else:
+            message = "У вас пока нет достижений. Играйте больше, чтобы получить их!"
+        
+        await update.message.reply_text(message)
+
     async def cmd_reset(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Обработчик команды /reset"""
         user_id = update.effective_user.id
         self.logger.info(f"User {user_id} requested game reset")
         
-        # Удаляем текущее состояние игры
-        query = "DELETE FROM user_states WHERE user_id = %s"
+        query = f"DELETE FROM {self.user_states_table} WHERE user_id = %s"
         result = self.db.execute_query(query, (user_id,))
         
         if result is not None:
-            # Сохраняем информацию о сбросе в сессии
-            session_query = """
-            INSERT INTO user_sessions (user_id, session_key, session_value, expires_at)
-            VALUES (%s, 'game_reset', 'Game reset by user', DATE_ADD(NOW(), INTERVAL 1 MONTH))
-            """
-            self.db.execute_query(session_query, (user_id,))
-            
             await update.message.reply_text(
                 "🔄 Игра успешно сброшена!\n"
                 "Используйте /play чтобы начать новую игру."
@@ -162,53 +167,61 @@ class GameMaster:
         user_id = query.from_user.id
         
         try:
-            # Получаем ID выбранной сцены из callback_data
             choice_id = int(query.data.split('_')[1])
             self.logger.info(f"User {user_id} made choice: {choice_id}")
             
-            # Получаем текущую сцену перед обновлением
             current_scene = await self.get_current_scene(user_id)
+            if not current_scene:
+                await query.answer("❌ Ошибка: сцена не найдена")
+                return
+
+            success, message, new_scene = self.game_logic.process_choice(
+                current_scene['id'], choice_id
+            )
+            
+            if not success:
+                await query.answer(message)
+                return
             
             # Обновляем состояние пользователя
-            update_query = """
-            UPDATE user_states 
+            update_query = f"""
+            UPDATE {self.user_states_table} 
             SET state = %s 
             WHERE user_id = %s
             """
-            self.db.execute_query(update_query, (choice_id, user_id))
+            self.db.execute_query(update_query, (new_scene['id'], user_id))
             
-            # Проверяем различные условия для достижений
-            if current_scene:
-                # Проверяем, является ли сцена "смертельной"
-                if "death" in current_scene.get('description', '').lower():
-                    self.achievement_manager.check_achievements(user_id, "death")
-                
-                # Проверяем завершение квеста
-                if not current_scene.get('options'):
-                    self.achievement_manager.check_achievements(user_id, "game_complete")
-                
-                # Проверяем исследование новых локаций
-                self.achievement_manager.check_achievements(user_id, "explore_location", 
-                    {"location_id": choice_id})
-            
-            # Получаем новую сцену
-            new_scene = await self.get_current_scene(user_id)
-            if new_scene:
-                # Создаем клавиатуру с новыми опциями
-                keyboard = []
-                for option_id, option_text in new_scene['options'].items():
-                    keyboard.append([InlineKeyboardButton(option_text, callback_data=f"choice_{option_id}")])
-                
-                reply_markup = InlineKeyboardMarkup(keyboard) if keyboard else None
-                
-                # Отвечаем на callback и обновляем сообщение
-                await query.answer()
-                await query.edit_message_text(
-                    text=new_scene['description'],
-                    reply_markup=reply_markup
+            # Проверяем специальные достижения
+            if current_scene.get('npc_interaction'):
+                self.achievement_manager.check_achievements(
+                    user_id, 
+                    "npc_interaction", 
+                    {"npc": current_scene['npc_interaction']}
                 )
-            else:
-                await query.answer("❌ Ошибка при загрузке сцены")
+            
+            if new_scene.get('is_death_scene'):
+                self.achievement_manager.check_achievements(user_id, "death")
+            
+            # Показываем новую сцену
+            keyboard = []
+            if not new_scene.get('is_death_scene') and new_scene.get('options'):
+                options = json.loads(new_scene['options']) if isinstance(new_scene['options'], str) else new_scene['options']
+                for option_id, option_text in options.items():
+                    keyboard.append([InlineKeyboardButton(option_text, callback_data=f"choice_{option_id}")])
+            
+            reply_markup = InlineKeyboardMarkup(keyboard) if keyboard else None
+            
+            await query.answer()
+            message_text = new_scene['description']
+            if new_scene.get('is_death_scene'):
+                message_text += "\n\n💀 Вы погибли. Используйте /play для новой игры."
+                # Проверяем достижение за первую смерть
+                self.achievement_manager.check_achievements(user_id, "first_death")
+            
+            await query.edit_message_text(
+                text=message_text,
+                reply_markup=reply_markup
+            )
                 
         except Exception as e:
             self.logger.error(f"Error handling choice: {e}")

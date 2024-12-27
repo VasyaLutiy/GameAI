@@ -90,20 +90,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def achievements_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Показать достижения пользователя"""
-    user_id = update.effective_user.id
-    logger.info(f"User {user_id} requested achievements")
-    
-    achievements = achievement_manager.get_user_achievements(user_id)
-    if achievements:
-        message = "🏆 Ваши достижения:\n\n"
-        for ach in achievements:
-            message += f"{ach['icon']} {ach['name']} ({ach['points']} очков)\n"
-            message += f"└ {ach['description']}\n"
-            message += f"└ Получено: {ach['unlocked_at'].strftime('%Y-%m-%d %H:%M')}\n\n"
-    else:
-        message = "У вас пока нет достижений. Продолжайте играть, чтобы открыть их! 🎮"
-    
-    await update.message.reply_text(message)
+    await game_master.cmd_achievements(update, context)
 
 async def achievement_progress_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Показать прогресс достижений"""
