@@ -30,6 +30,6 @@ bot_database.db
 *.swo
 *~
 
-# Configuration files that should be versioned
-# character_profiles.json
-# dialogs.json
+# Local configuration
+character_profiles.json
+dialogs.json
