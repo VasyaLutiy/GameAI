@@ -30,6 +30,9 @@ bot_database.db
 *.swo
 *~
 
-# Local configuration
+# Local configuration (working files)
 character_profiles.json
 dialogs.json
+
+# But include templates
+!templates/*.template.json
