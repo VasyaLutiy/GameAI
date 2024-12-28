@@ -3,9 +3,11 @@ from sqlalchemy.orm import sessionmaker, scoped_session
 from contextlib import contextmanager
 import os
 
-from models.user import Base
+from models.base import Base  # Импортируем Base из отдельного файла
+from models.user import User
 from models.event import Event
-from models.chat_history import ChatHistory  # Добавляем импорт новой модели
+from models.chat_history import ChatHistory
+from models.note import Note  # Добавляем импорт Note
 
 # Создаем подключение к базе данных SQLite
 DATABASE_URL = "sqlite:///bot_database.db"
@@ -34,14 +36,25 @@ def init_db():
 
 def get_or_create_user(session, telegram_id: int, **kwargs):
     """Получает существующего пользователя или создает нового"""
+    import logging
+    logger = logging.getLogger(__name__)
     from models.user import User
     
-    user = session.query(User).filter_by(telegram_id=telegram_id).first()
-    if not user:
-        user = User(telegram_id=telegram_id, **kwargs)
-        session.add(user)
-        session.commit()
-    return user
+    try:
+        logger.info(f"Looking for user with telegram_id={telegram_id}")
+        user = session.query(User).filter_by(telegram_id=telegram_id).first()
+        if not user:
+            logger.info(f"Creating new user with telegram_id={telegram_id}")
+            user = User(telegram_id=telegram_id, **kwargs)
+            session.add(user)
+            session.commit()
+            logger.info(f"New user created with id={user.id}")
+        else:
+            logger.info(f"Found existing user with id={user.id}")
+        return user
+    except Exception as e:
+        logger.error(f"Error in get_or_create_user: {str(e)}")
+        raise e
 
 def create_reminder(session, user_id: int, chat_id: int, title: str, reminder_time, description: str = None):
     """Создает новое напоминание"""
@@ -111,17 +124,25 @@ def mark_reminder_sent(session, reminder_id: int):
 
 def save_dialog(session, user_id: int, message: str, response: str, character_mode: str):
     """Сохраняет диалог в историю"""
+    import logging
+    logger = logging.getLogger(__name__)
+    
     try:
+        logger.info(f"Creating dialog entry for user_id={user_id}")
         dialog = ChatHistory.create_dialog_entry(
             user_id=user_id,
             message=message,
             response=response,
             character_mode=character_mode
         )
+        logger.info("Dialog entry created, adding to session")
         session.add(dialog)
+        logger.info("Committing dialog to database")
         session.commit()
+        logger.info(f"Dialog saved successfully with id={dialog.id}")
         return dialog
     except Exception as e:
+        logger.error(f"Error in save_dialog: {str(e)}")
         session.rollback()
         raise e
 

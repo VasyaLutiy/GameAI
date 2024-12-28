@@ -3,17 +3,35 @@
 BOT_SCRIPT="bot.py"
 PID_FILE="bot.pid"
 LOG_FILE="bot.log"
-PYTHONPATH="/workspace/test_simple"
+PYTHONPATH="/workspace/telegram_secretary/v1_history"
 
 start() {
     if [ -f "$PID_FILE" ]; then
-        echo "Bot is already running (PID: $(cat $PID_FILE))"
-    else
-        echo "Starting bot..."
-        PYTHONPATH=$PYTHONPATH python3 $BOT_SCRIPT > $LOG_FILE 2>&1 &
-        echo $! > $PID_FILE
-        echo "Bot started with PID: $(cat $PID_FILE)"
-        echo "Use 'tail -f $LOG_FILE' to view logs"
+        PID=$(cat $PID_FILE)
+        if ps -p $PID > /dev/null; then
+            echo "Bot is already running (PID: $PID)"
+            return
+        else
+            echo "Stale PID file found, cleaning up..."
+            rm -f $PID_FILE
+        fi
+    fi
+    
+    echo "Starting bot..."
+    rm -f $LOG_FILE
+    PYTHONPATH=$PYTHONPATH python3 $BOT_SCRIPT > $LOG_FILE 2>&1 &
+    NEW_PID=$!
+    echo $NEW_PID > $PID_FILE
+    echo "Bot started with PID: $NEW_PID"
+    echo "Use 'tail -f $LOG_FILE' to view logs"
+    
+    # Wait a moment and check if process is still running
+    sleep 2
+    if ! ps -p $NEW_PID > /dev/null; then
+        echo "Warning: Bot process died immediately. Check logs:"
+        tail -n 10 $LOG_FILE
+        rm -f $PID_FILE
+        return 1
     fi
 }
 

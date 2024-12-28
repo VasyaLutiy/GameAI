@@ -13,6 +13,7 @@ logging.basicConfig(
     level=logging.DEBUG,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
+        logging.FileHandler('bot.log', encoding='utf-8'),
         logging.StreamHandler()
     ]
 )
@@ -20,8 +21,8 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Инициализация Василисы с выбранным провайдером контекста
-# Можно изменить на "vector" когда будет реализован векторный провайдер
-CONTEXT_PROVIDER = os.getenv("CONTEXT_PROVIDER", "simple_json")
+# Используем combined провайдер для учета истории диалогов
+CONTEXT_PROVIDER = os.getenv("CONTEXT_PROVIDER", "combined")
 vasilia = VasilisaLLM(context_provider=CONTEXT_PROVIDER)
 logger.info(f"Инициализация Василисы с провайдером контекста: {CONTEXT_PROVIDER}")
 
@@ -113,11 +114,14 @@ async def show_reminders(telegram_id: int, chat_id: int) -> str:
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обработчик текстовых сообщений"""
+    logger.info("Received message update")
     user = update.effective_user
     message_text = update.message.text
     chat_id = update.message.chat_id
     
-    logger.info(f"Сообщение от {user.id} ({user.full_name}): {message_text}")
+    logger.info(f"Message details: user_id={user.id}, username={user.username}, full_name={user.full_name}")
+    logger.info(f"Message text: {message_text}")
+    logger.info(f"Chat ID: {chat_id}")
     
     try:
         # Проверяем запрос на просмотр напоминаний
@@ -219,15 +223,23 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 return
         
         # Если это не напоминание, обрабатываем как обычное сообщение
-        response = await vasilia.get_response(message_text)
+        response = await vasilia.get_response(message_text, user_id=user.id)
         logger.info(f"Ответ для {user.id}: {response}")
         
         # Сохраняем диалог в историю
         try:
+            from database import get_db, save_dialog, get_or_create_user
             with get_db() as db:
+                db_user = get_or_create_user(
+                    db,
+                    telegram_id=user.id,
+                    username=user.username,
+                    first_name=user.first_name,
+                    last_name=user.last_name
+                )
                 save_dialog(
                     db,
-                    user_id=user.id,
+                    user_id=db_user.id,
                     message=message_text,
                     response=response,
                     character_mode=vasilia.character_mode

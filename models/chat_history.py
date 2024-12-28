@@ -2,7 +2,7 @@ from datetime import datetime, UTC
 from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Text, LargeBinary
 from sqlalchemy.orm import relationship
 
-from .user import Base
+from .base import Base
 
 class ChatHistory(Base):
     """Модель для хранения истории диалогов"""

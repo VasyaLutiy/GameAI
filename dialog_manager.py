@@ -90,22 +90,30 @@ class DialogHistoryManager:
             return []
     
     def format_dialogs_for_context(self, dialogs: List[dict], 
-                                 max_length: int = 1000) -> str:
+                                 max_length: int = 2000) -> str:
         """Форматировать диалоги для использования в контексте"""
         if not dialogs:
             return ""
+        
+        # Переворачиваем список диалогов, чтобы они шли в хронологическом порядке
+        dialogs = list(reversed(dialogs))
         
         context = []
         total_length = 0
         
         for dialog in dialogs:
-            dialog_text = f"User: {dialog['message']}\nAssistant ({dialog['character_mode']}): {dialog['response']}"
+            dialog_text = (
+                f"User: {dialog['message']}\n"
+                f"Assistant ({dialog['character_mode']}): {dialog['response']}"
+            )
             if total_length + len(dialog_text) > max_length:
                 break
             context.append(dialog_text)
             total_length += len(dialog_text)
-        
-        return "\n\n".join(context)
+            
+        result = "\n\n".join(context)
+        logger.info(f"Formatted {len(dialogs)} dialogs into context, length: {len(result)}")
+        return result
     
     def clear_old_dialogs(self, days_to_keep: int = 30) -> int:
         """Удалить старые диалоги"""

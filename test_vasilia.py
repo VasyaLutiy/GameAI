@@ -3,14 +3,16 @@ import pytest
 import aiohttp
 from typing import Optional, Dict
 
-# Настройки
-LLM_API_BASE = 'http://172.17.0.2:4000/v1'
-LLM_MODEL_NAME = 'Claude'
+import os
+from dotenv import load_dotenv
+
+# Загружаем настройки из .env
+load_dotenv()
 
 class VasilisaLLM:
     def __init__(self, character_mode="default", context_provider="simple_json"):
-        self.api_base = LLM_API_BASE
-        self.model = LLM_MODEL_NAME
+        self.api_base = os.getenv('LLM_API_BASE')
+        self.model = os.getenv('LLM_MODEL_NAME')
         self.max_tokens = 4096
         self.character_mode = character_mode
         self.context_provider = context_provider
@@ -49,25 +51,32 @@ class VasilisaLLM:
         else:
             return self.simple_json_content  # default fallback
 
-    def combined_content(self, message: str, user_id: int, num_examples: int = 3) -> str:
+    def combined_content(self, message: str, user_id: int = None, num_examples: int = 3) -> str:
         """Комбинированный провайдер контекста (базовые диалоги + история)"""
+        import logging
+        logger = logging.getLogger(__name__)
+        
+        logger.info(f"Combined content called with message='{message}', user_id={user_id}")
+        combined = []
+        
         # Получаем базовые примеры
         base_examples = self.simple_json_content(message, num_examples=2)
-        
-        # Получаем историю диалогов
-        history_examples = self.history_content(message, user_id, num_examples=2)
-        
-        # Комбинируем контексты
-        combined = []
         if base_examples:
             combined.append("Базовые примеры диалогов:")
             combined.append(base_examples)
+        logger.info("Got base examples")
         
-        if history_examples:
-            combined.append("\nВаши предыдущие диалоги:")
-            combined.append(history_examples)
-            
-        return "\n".join(combined)
+        # Получаем историю диалогов, если есть user_id
+        if user_id:
+            history_examples = self.history_content(message, user_id, num_examples=5)
+            if history_examples:
+                combined.append("\nВаши предыдущие диалоги:")
+                combined.append(history_examples)
+            logger.info(f"Got history examples: {history_examples[:200] if history_examples else 'None'}...")
+        
+        result = "\n".join(combined)
+        logger.info(f"Combined content result length: {len(result)}")
+        return result
 
     def simple_json_content(self, message: str = None, num_examples: int = 3) -> str:
         """Простой провайдер контекста на основе JSON"""
@@ -79,28 +88,38 @@ class VasilisaLLM:
 
     def history_content(self, message: str, user_id: int, num_examples: int = 3) -> str:
         """Провайдер контекста на основе истории диалогов"""
+        import logging
+        logger = logging.getLogger(__name__)
         from dialog_manager import DialogHistoryManager
         
+        logger.info(f"Getting history for user_id={user_id}, character_mode={self.character_mode}")
         dialog_manager = DialogHistoryManager()
         
         # Получаем диалоги для текущего характера
         character_dialogs = dialog_manager.get_character_dialogs(
             telegram_id=user_id,
             character_mode=self.character_mode,
-            limit=num_examples
+            limit=10  # Увеличим лимит
         )
+        logger.info(f"Got {len(character_dialogs)} character dialogs")
+        for i, d in enumerate(character_dialogs):
+            logger.info(f"Dialog {i+1}: {d['message'][:100]} -> {d['response'][:100]}")
         
-        # Если диалогов с текущим характером мало, добавляем общие диалоги
-        if len(character_dialogs) < num_examples:
-            recent_dialogs = dialog_manager.get_recent_dialogs(
-                telegram_id=user_id,
-                limit=num_examples - len(character_dialogs)
-            )
-            all_dialogs = character_dialogs + recent_dialogs
-        else:
-            all_dialogs = character_dialogs
-            
-        return dialog_manager.format_dialogs_for_context(all_dialogs)
+        # Получаем общие диалоги в любом случае
+        recent_dialogs = dialog_manager.get_recent_dialogs(
+            telegram_id=user_id,
+            limit=10  # Увеличим лимит для общих диалогов
+        )
+        logger.info(f"Got {len(recent_dialogs)} recent dialogs")
+        for i, d in enumerate(recent_dialogs):
+            logger.info(f"Recent dialog {i+1}: {d['message'][:100]} -> {d['response'][:100]}")
+        
+        # Объединяем все диалоги
+        all_dialogs = character_dialogs + recent_dialogs
+        
+        formatted_dialogs = dialog_manager.format_dialogs_for_context(all_dialogs)
+        logger.info(f"Formatted dialogs: {formatted_dialogs[:200]}...")
+        return formatted_dialogs
 
     # Заготовка для векторного провайдера
     # def vector_content(self, message: str, num_examples: int = 3) -> str:
@@ -108,15 +127,15 @@ class VasilisaLLM:
     #     # TODO: Реализовать векторный поиск похожих диалогов
     #     pass
 
-    def create_system_prompt(self, context_provider="simple_json") -> str:
+    def create_system_prompt(self, message: str = "", user_id: int = None) -> str:
         """Создание системного промпта на основе данных персонажа"""
         profile = self.current_profile['personality']
         traits = ', '.join(profile['traits'])
         speech_style = ', '.join(profile['speech_style'])
         
         # Получаем примеры диалогов через выбранный провайдер
-        provider = self.get_context_provider(context_provider)
-        dialog_examples = provider()
+        provider = self.get_context_provider(self.context_provider)
+        dialog_examples = provider(message, user_id) if user_id else provider(message)
         
         base_prompt = profile['system_prompt']
         
@@ -130,9 +149,14 @@ class VasilisaLLM:
 
 Помни: ты {self.current_profile['name']}, сохраняй свой уникальный стиль общения."""
         
-    async def get_response(self, message: str) -> str:
+    async def get_response(self, message: str, user_id: int = None) -> str:
         """Получение ответа от модели"""
-        system_prompt = self.create_system_prompt(context_provider=self.context_provider)
+        import logging
+        logger = logging.getLogger(__name__)
+        
+        logger.info(f"get_response called with message='{message}', user_id={user_id}")
+        system_prompt = self.create_system_prompt(message=message, user_id=user_id)
+        logger.info(f"Created system prompt, length: {len(system_prompt)}")
         
         async with aiohttp.ClientSession() as session:
             try:

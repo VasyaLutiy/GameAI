@@ -3,7 +3,7 @@ import pytz
 from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Text, Boolean
 from sqlalchemy.orm import relationship
 
-from .user import Base
+from .base import Base
 
 class Event(Base):
     __tablename__ = "events"

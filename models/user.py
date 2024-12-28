@@ -1,10 +1,11 @@
 from datetime import datetime
 import pytz
 from sqlalchemy import Column, Integer, String, DateTime
-from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship
-
-Base = declarative_base()
+from models.base import Base
+from models.note import Note
+from models.event import Event
+from models.chat_history import ChatHistory
 
 class User(Base):
     __tablename__ = 'users'
@@ -21,6 +22,7 @@ class User(Base):
     chat_history = relationship("ChatHistory", back_populates="user", 
                               order_by="desc(ChatHistory.timestamp)",
                               cascade="all, delete-orphan")
+    notes = relationship("Note", back_populates="user", cascade="all, delete-orphan")
     
     def get_recent_dialogs(self, limit: int = 5) -> list:
         """Получить последние диалоги пользователя"""

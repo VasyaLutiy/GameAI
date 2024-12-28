@@ -5,7 +5,7 @@ import json
 from typing import Optional, Dict
 
 # Настройки
-LLM_API_BASE = 'http://172.17.0.2:4000/v1'
+LLM_API_BASE = 'http://172.18.0.3:4000/v1'
 LLM_MODEL_NAME = 'Claude'
 
 class SimpleLLMManager:
