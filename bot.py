@@ -19,8 +19,11 @@ logging.basicConfig(
 
 logger = logging.getLogger(__name__)
 
-# Инициализация Василисы
-vasilia = VasilisaLLM()
+# Инициализация Василисы с выбранным провайдером контекста
+# Можно изменить на "vector" когда будет реализован векторный провайдер
+CONTEXT_PROVIDER = os.getenv("CONTEXT_PROVIDER", "simple_json")
+vasilia = VasilisaLLM(context_provider=CONTEXT_PROVIDER)
+logger.info(f"Инициализация Василисы с провайдером контекста: {CONTEXT_PROVIDER}")
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обработчик команды /start"""

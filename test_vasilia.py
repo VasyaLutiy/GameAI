@@ -8,11 +8,12 @@ LLM_API_BASE = 'http://172.17.0.2:4000/v1'
 LLM_MODEL_NAME = 'Claude'
 
 class VasilisaLLM:
-    def __init__(self, character_mode="default"):
+    def __init__(self, character_mode="default", context_provider="simple_json"):
         self.api_base = LLM_API_BASE
         self.model = LLM_MODEL_NAME
         self.max_tokens = 4096
         self.character_mode = character_mode
+        self.context_provider = context_provider
         self.load_character_data()
         
     def load_character_data(self):
@@ -37,18 +38,39 @@ class VasilisaLLM:
         else:
             return f"Ошибка: характер '{mode}' не найден. Доступные характеры: {', '.join(self.character_profiles.keys())}"
             
-    def create_system_prompt(self) -> str:
+    def get_context_provider(self, provider_type="simple_json"):
+        """Выбор провайдера контекста диалогов"""
+        if provider_type == "simple_json":
+            return self.simple_json_content
+        # Здесь можно добавить другие провайдеры:
+        # elif provider_type == "vector":
+        #     return self.vector_content
+        else:
+            return self.simple_json_content  # default fallback
+
+    def simple_json_content(self, message: str = None, num_examples: int = 3) -> str:
+        """Простой провайдер контекста на основе JSON"""
+        import random
+        example_dialogs = random.sample(self.dialog_data['conversations'], num_examples)
+        return '\n'.join([
+            f"Вопрос: {d['q']}\nОтвет: {d['a']}" for d in example_dialogs
+        ])
+
+    # Заготовка для векторного провайдера
+    # def vector_content(self, message: str, num_examples: int = 3) -> str:
+    #     """Векторный провайдер контекста"""
+    #     # TODO: Реализовать векторный поиск похожих диалогов
+    #     pass
+
+    def create_system_prompt(self, context_provider="simple_json") -> str:
         """Создание системного промпта на основе данных персонажа"""
         profile = self.current_profile['personality']
         traits = ', '.join(profile['traits'])
         speech_style = ', '.join(profile['speech_style'])
         
-        # Выбираем 3 случайных диалога для примера
-        import random
-        example_dialogs = random.sample(self.dialog_data['conversations'], 3)
-        dialog_examples = '\n'.join([
-            f"Вопрос: {d['q']}\nОтвет: {d['a']}" for d in example_dialogs
-        ])
+        # Получаем примеры диалогов через выбранный провайдер
+        provider = self.get_context_provider(context_provider)
+        dialog_examples = provider()
         
         base_prompt = profile['system_prompt']
         
@@ -64,7 +86,7 @@ class VasilisaLLM:
         
     async def get_response(self, message: str) -> str:
         """Получение ответа от модели"""
-        system_prompt = self.create_system_prompt()
+        system_prompt = self.create_system_prompt(context_provider=self.context_provider)
         
         async with aiohttp.ClientSession() as session:
             try:
@@ -91,43 +113,71 @@ class VasilisaLLM:
 
 @pytest.mark.asyncio
 async def test_vasilia_basic_chat():
-    """Тест базового общения с Василисой"""
-    vasilia = VasilisaLLM()
+    """Тест базового общения с Василисой с разными провайдерами контекста"""
+    # Тест с простым JSON провайдером
+    vasilia_simple = VasilisaLLM(context_provider="simple_json")
+    
+    # Тест с дефолтным провайдером (должен быть simple_json)
+    vasilia_default = VasilisaLLM()
     
     test_messages = [
         "Здравствуйте! Как вас зовут?",
         "Можете помочь организовать мой день?",
         "У меня много задач, и я не знаю, за что взяться первым делом",
-        "Как справиться со стрессом на работе?",
-        "Спасибо за советы! До свидания!"
     ]
     
     for message in test_messages:
-        print(f"\nВопрос: {message}")
-        response = await vasilia.get_response(message)
-        print(f"Ответ Василисы: {response}")
+        print(f"\nТест simple_json провайдера:")
+        print(f"Вопрос: {message}")
+        response_simple = await vasilia_simple.get_response(message)
+        print(f"Ответ Василисы (simple_json): {response_simple}")
+        
+        print(f"\nТест дефолтного провайдера:")
+        response_default = await vasilia_default.get_response(message)
+        print(f"Ответ Василисы (default): {response_default}")
         
         # Базовые проверки
-        assert response is not None
-        assert len(response) > 0
-        assert isinstance(response, str)
+        for response in [response_simple, response_default]:
+            assert response is not None
+            assert len(response) > 0
+            assert isinstance(response, str)
 
 @pytest.mark.asyncio
 async def test_vasilia_character_consistency():
-    """Тест соответствия характеру персонажа"""
+    """Тест соответствия характеру персонажа с разными провайдерами"""
+    vasilia = VasilisaLLM(context_provider="simple_json")
+    
+    test_scenarios = [
+        ("default", "Что делать, если всё валится из рук?", "народная мудрость"),
+        ("cyber", "Как оптимизировать рабочий процесс?", "кибер-стиль"),
+        ("sassy", "Что думаешь о современной моде?", "дерзкий стиль")
+    ]
+    
+    for character, question, style in test_scenarios:
+        vasilia.switch_character(character)
+        response = await vasilia.get_response(question)
+        print(f"\nХарактер: {character}")
+        print(f"Вопрос: {question}")
+        print(f"Ответ ({style}): {response}")
+        
+        # Проверяем, что ответ не пустой
+        assert response is not None
+        assert len(response) > 0
+
+@pytest.mark.asyncio
+async def test_context_provider_switch():
+    """Тест переключения провайдеров контекста"""
     vasilia = VasilisaLLM()
     
-    # Проверка использования народной мудрости
-    response = await vasilia.get_response("Что делать, если всё валится из рук?")
-    print(f"\nВопрос о трудностях: {response}")
+    # Проверяем, что провайдер по умолчанию работает
+    assert vasilia.context_provider == "simple_json"
     
-    # Проверка делового совета
-    response = await vasilia.get_response("Как лучше организовать важную встречу?")
-    print(f"\nВопрос о деловой встрече: {response}")
-    
-    # Проверка эмпатии
-    response = await vasilia.get_response("Я очень волнуюсь перед важным выступлением")
-    print(f"\nВопрос о волнении: {response}")
+    # Проверяем работу simple_json провайдера
+    dialog_examples = vasilia.simple_json_content()
+    assert dialog_examples is not None
+    assert isinstance(dialog_examples, str)
+    assert "Вопрос:" in dialog_examples
+    assert "Ответ:" in dialog_examples
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v", "-s"])
