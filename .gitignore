@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Logs
+*.log
+logs/
+
+# Database
+*.db
+*.sqlite3
+
+# Environment
+.env
+.venv
+env/
+venv/
+
+# Bot specific
+bot.pid
+bot_database.db
+
+# IDE
+.idea/
+.vscode/
+
+# Temporary files
+*.swp
+*.swo
+*~
+
+# Local configuration
+character_profiles.json
+dialogs.json

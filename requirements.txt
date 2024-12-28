@@ -1,0 +1,5 @@
+python-telegram-bot>=20.0
+SQLAlchemy>=2.0.0
+pytz
+python-dateutil
+APScheduler>=3.10.0
