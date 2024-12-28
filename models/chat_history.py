@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, UTC
 from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Text, LargeBinary
 from sqlalchemy.orm import relationship
 
@@ -37,5 +37,5 @@ class ChatHistory(Base):
             response=response,
             character_mode=character_mode,
             embedding=embedding,
-            timestamp=datetime.utcnow()
+            timestamp=datetime.now(UTC)
         )

@@ -35,28 +35,61 @@ class DialogHistoryManager:
             logger.error(f"Ошибка при сохранении диалога: {e}")
             return None
     
-    def get_recent_dialogs(self, telegram_id: int, limit: int = 5) -> List[ChatHistory]:
+    def get_recent_dialogs(self, telegram_id: int, limit: int = 5) -> List[dict]:
         """Получить последние диалоги пользователя"""
         try:
             with get_db() as db:
                 user = get_or_create_user(db, telegram_id)
-                return user.get_recent_dialogs(limit)
+                # Получаем диалоги напрямую через запрос
+                dialogs = (db.query(ChatHistory)
+                          .filter(ChatHistory.user_id == user.id)
+                          .order_by(ChatHistory.timestamp.desc())
+                          .limit(limit)
+                          .all())
+                
+                # Преобразуем в словари до закрытия сессии
+                return [
+                    {
+                        'message': d.message,
+                        'response': d.response,
+                        'character_mode': d.character_mode,
+                        'timestamp': d.timestamp
+                    }
+                    for d in dialogs
+                ]
         except Exception as e:
             logger.error(f"Ошибка при получении диалогов: {e}")
             return []
     
     def get_character_dialogs(self, telegram_id: int, 
-                            character_mode: str, limit: int = 5) -> List[ChatHistory]:
+                            character_mode: str, limit: int = 5) -> List[dict]:
         """Получить диалоги пользователя с определенным характером бота"""
         try:
             with get_db() as db:
                 user = get_or_create_user(db, telegram_id)
-                return user.get_dialogs_by_character(character_mode, limit)
+                # Получаем диалоги напрямую через запрос
+                dialogs = (db.query(ChatHistory)
+                          .filter(ChatHistory.user_id == user.id)
+                          .filter(ChatHistory.character_mode == character_mode)
+                          .order_by(ChatHistory.timestamp.desc())
+                          .limit(limit)
+                          .all())
+                
+                # Преобразуем в словари до закрытия сессии
+                return [
+                    {
+                        'message': d.message,
+                        'response': d.response,
+                        'character_mode': d.character_mode,
+                        'timestamp': d.timestamp
+                    }
+                    for d in dialogs
+                ]
         except Exception as e:
             logger.error(f"Ошибка при получении диалогов для характера {character_mode}: {e}")
             return []
     
-    def format_dialogs_for_context(self, dialogs: List[ChatHistory], 
+    def format_dialogs_for_context(self, dialogs: List[dict], 
                                  max_length: int = 1000) -> str:
         """Форматировать диалоги для использования в контексте"""
         if not dialogs:
@@ -66,7 +99,7 @@ class DialogHistoryManager:
         total_length = 0
         
         for dialog in dialogs:
-            dialog_text = dialog.formatted_dialog
+            dialog_text = f"User: {dialog['message']}\nAssistant ({dialog['character_mode']}): {dialog['response']}"
             if total_length + len(dialog_text) > max_length:
                 break
             context.append(dialog_text)
