@@ -86,7 +86,7 @@ class VasilisaLLM:
             f"Вопрос: {d['q']}\nОтвет: {d['a']}" for d in example_dialogs
         ])
 
-    def history_content(self, message: str, user_id: int, num_examples: int = 3) -> str:
+    def history_content(self, message: str, user_id: int, num_examples: int = 20) -> str:
         """Провайдер контекста на основе истории диалогов"""
         import logging
         logger = logging.getLogger(__name__)

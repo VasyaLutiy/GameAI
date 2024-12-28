@@ -35,7 +35,7 @@ class DialogHistoryManager:
             logger.error(f"Ошибка при сохранении диалога: {e}")
             return None
     
-    def get_recent_dialogs(self, telegram_id: int, limit: int = 5) -> List[dict]:
+    def get_recent_dialogs(self, telegram_id: int, limit: int = 20) -> List[dict]:
         """Получить последние диалоги пользователя"""
         try:
             with get_db() as db:
@@ -62,7 +62,7 @@ class DialogHistoryManager:
             return []
     
     def get_character_dialogs(self, telegram_id: int, 
-                            character_mode: str, limit: int = 5) -> List[dict]:
+                            character_mode: str, limit: int = 20) -> List[dict]:
         """Получить диалоги пользователя с определенным характером бота"""
         try:
             with get_db() as db:
