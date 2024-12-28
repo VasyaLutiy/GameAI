@@ -5,6 +5,7 @@ import os
 
 from models.user import Base
 from models.event import Event
+from models.chat_history import ChatHistory  # Добавляем импорт новой модели
 
 # Создаем подключение к базе данных SQLite
 DATABASE_URL = "sqlite:///bot_database.db"
@@ -107,3 +108,32 @@ def mark_reminder_sent(session, reminder_id: int):
     if reminder:
         reminder.reminder_sent = True
         session.commit()
+
+def save_dialog(session, user_id: int, message: str, response: str, character_mode: str):
+    """Сохраняет диалог в историю"""
+    try:
+        dialog = ChatHistory.create_dialog_entry(
+            user_id=user_id,
+            message=message,
+            response=response,
+            character_mode=character_mode
+        )
+        session.add(dialog)
+        session.commit()
+        return dialog
+    except Exception as e:
+        session.rollback()
+        raise e
+
+def get_user_dialog_history(session, user_id: int, limit: int = 5):
+    """Получает последние диалоги пользователя"""
+    return session.query(ChatHistory).filter(
+        ChatHistory.user_id == user_id
+    ).order_by(ChatHistory.timestamp.desc()).limit(limit).all()
+
+def get_character_dialog_history(session, user_id: int, character_mode: str, limit: int = 5):
+    """Получает диалоги пользователя с определенным характером бота"""
+    return session.query(ChatHistory).filter(
+        ChatHistory.user_id == user_id,
+        ChatHistory.character_mode == character_mode
+    ).order_by(ChatHistory.timestamp.desc()).limit(limit).all()

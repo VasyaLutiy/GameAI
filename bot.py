@@ -221,6 +221,21 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Если это не напоминание, обрабатываем как обычное сообщение
         response = await vasilia.get_response(message_text)
         logger.info(f"Ответ для {user.id}: {response}")
+        
+        # Сохраняем диалог в историю
+        try:
+            with get_db() as db:
+                save_dialog(
+                    db,
+                    user_id=user.id,
+                    message=message_text,
+                    response=response,
+                    character_mode=vasilia.character_mode
+                )
+                logger.info(f"Диалог сохранен для пользователя {user.id}")
+        except Exception as e:
+            logger.error(f"Ошибка при сохранении диалога: {e}")
+        
         await update.message.reply_text(response)
         
     except Exception as e:

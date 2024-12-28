@@ -42,11 +42,32 @@ class VasilisaLLM:
         """Выбор провайдера контекста диалогов"""
         if provider_type == "simple_json":
             return self.simple_json_content
-        # Здесь можно добавить другие провайдеры:
-        # elif provider_type == "vector":
-        #     return self.vector_content
+        elif provider_type == "history":
+            return self.history_content
+        elif provider_type == "combined":
+            return self.combined_content
         else:
             return self.simple_json_content  # default fallback
+
+    def combined_content(self, message: str, user_id: int, num_examples: int = 3) -> str:
+        """Комбинированный провайдер контекста (базовые диалоги + история)"""
+        # Получаем базовые примеры
+        base_examples = self.simple_json_content(message, num_examples=2)
+        
+        # Получаем историю диалогов
+        history_examples = self.history_content(message, user_id, num_examples=2)
+        
+        # Комбинируем контексты
+        combined = []
+        if base_examples:
+            combined.append("Базовые примеры диалогов:")
+            combined.append(base_examples)
+        
+        if history_examples:
+            combined.append("\nВаши предыдущие диалоги:")
+            combined.append(history_examples)
+            
+        return "\n".join(combined)
 
     def simple_json_content(self, message: str = None, num_examples: int = 3) -> str:
         """Простой провайдер контекста на основе JSON"""
@@ -55,6 +76,31 @@ class VasilisaLLM:
         return '\n'.join([
             f"Вопрос: {d['q']}\nОтвет: {d['a']}" for d in example_dialogs
         ])
+
+    def history_content(self, message: str, user_id: int, num_examples: int = 3) -> str:
+        """Провайдер контекста на основе истории диалогов"""
+        from dialog_manager import DialogHistoryManager
+        
+        dialog_manager = DialogHistoryManager()
+        
+        # Получаем диалоги для текущего характера
+        character_dialogs = dialog_manager.get_character_dialogs(
+            telegram_id=user_id,
+            character_mode=self.character_mode,
+            limit=num_examples
+        )
+        
+        # Если диалогов с текущим характером мало, добавляем общие диалоги
+        if len(character_dialogs) < num_examples:
+            recent_dialogs = dialog_manager.get_recent_dialogs(
+                telegram_id=user_id,
+                limit=num_examples - len(character_dialogs)
+            )
+            all_dialogs = character_dialogs + recent_dialogs
+        else:
+            all_dialogs = character_dialogs
+            
+        return dialog_manager.format_dialogs_for_context(all_dialogs)
 
     # Заготовка для векторного провайдера
     # def vector_content(self, message: str, num_examples: int = 3) -> str:

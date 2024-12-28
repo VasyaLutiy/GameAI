@@ -18,6 +18,18 @@ class User(Base):
     
     # Отношения
     events = relationship("Event", back_populates="user", cascade="all, delete-orphan")
+    chat_history = relationship("ChatHistory", back_populates="user", 
+                              order_by="desc(ChatHistory.timestamp)",
+                              cascade="all, delete-orphan")
+    
+    def get_recent_dialogs(self, limit: int = 5) -> list:
+        """Получить последние диалоги пользователя"""
+        return self.chat_history[:limit]
+    
+    def get_dialogs_by_character(self, character_mode: str, limit: int = 5) -> list:
+        """Получить диалоги пользователя с определенным характером бота"""
+        return [d for d in self.chat_history 
+                if d.character_mode == character_mode][:limit]
     
     def __repr__(self):
         return f"<User(telegram_id={self.telegram_id}, username={self.username})>"
