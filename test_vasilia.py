@@ -48,8 +48,20 @@ class VasilisaLLM:
             return self.history_content
         elif provider_type == "combined":
             return self.combined_content
+        elif provider_type == "summary":
+            return self.summary_content
         else:
             return self.simple_json_content  # default fallback
+
+    async def summary_content(self, message: str, user_id: int = None, num_examples: int = 3) -> str:
+        """Провайдер контекста на основе саммари"""
+        from services.context_provider import SummaryContextProvider
+        
+        if not user_id:
+            return self.simple_json_content(message, num_examples)
+            
+        provider = SummaryContextProvider()
+        return await provider.get_context(message, user_id)
 
     def combined_content(self, message: str, user_id: int = None, num_examples: int = 3) -> str:
         """Комбинированный провайдер контекста (базовые диалоги + история)"""

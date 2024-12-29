@@ -20,9 +20,9 @@ logging.basicConfig(
 
 logger = logging.getLogger(__name__)
 
-# Инициализация Василисы с выбранным провайдером контекста
-# Используем combined провайдер для учета истории диалогов
-CONTEXT_PROVIDER = os.getenv("CONTEXT_PROVIDER", "combined")
+# Инициализация Василисы с провайдером контекста на основе саммари
+# Используем summary провайдер для иерархической истории диалогов
+CONTEXT_PROVIDER = os.getenv("CONTEXT_PROVIDER", "summary")
 vasilia = VasilisaLLM(context_provider=CONTEXT_PROVIDER)
 logger.info(f"Инициализация Василисы с провайдером контекста: {CONTEXT_PROVIDER}")
 
