@@ -52,6 +52,14 @@ restart() {
     start
 }
 
+restart_preserve_db() {
+    echo "Restarting bot while preserving database..."
+    stop
+    sleep 2
+    start
+    echo "Bot restarted with preserved database"
+}
+
 status() {
     if [ -f "$PID_FILE" ]; then
         PID=$(cat $PID_FILE)
@@ -78,11 +86,14 @@ case "$1" in
     restart)
         restart
         ;;
+    restart_preserve_db)
+        restart_preserve_db
+        ;;
     status)
         status
         ;;
     *)
-        echo "Usage: $0 {start|stop|restart|status}"
+        echo "Usage: $0 {start|stop|restart|restart_preserve_db|status}"
         exit 1
         ;;
 esac

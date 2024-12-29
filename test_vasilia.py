@@ -40,7 +40,7 @@ class VasilisaLLM:
         else:
             return f"Ошибка: характер '{mode}' не найден. Доступные характеры: {', '.join(self.character_profiles.keys())}"
             
-    def get_context_provider(self, provider_type="simple_json"):
+    async def get_context_provider(self, provider_type="simple_json"):
         """Выбор провайдера контекста диалогов"""
         if provider_type == "simple_json":
             return self.simple_json_content
@@ -139,15 +139,15 @@ class VasilisaLLM:
     #     # TODO: Реализовать векторный поиск похожих диалогов
     #     pass
 
-    def create_system_prompt(self, message: str = "", user_id: int = None) -> str:
+    async def create_system_prompt(self, message: str = "", user_id: int = None) -> str:
         """Создание системного промпта на основе данных персонажа"""
         profile = self.current_profile['personality']
         traits = ', '.join(profile['traits'])
         speech_style = ', '.join(profile['speech_style'])
         
         # Получаем примеры диалогов через выбранный провайдер
-        provider = self.get_context_provider(self.context_provider)
-        dialog_examples = provider(message, user_id) if user_id else provider(message)
+        provider = await self.get_context_provider(self.context_provider)
+        dialog_examples = await provider(message, user_id) if user_id else provider(message)
         
         base_prompt = profile['system_prompt']
         
@@ -161,14 +161,15 @@ class VasilisaLLM:
 
 Помни: ты {self.current_profile['name']}, сохраняй свой уникальный стиль общения."""
         
-    async def get_response(self, message: str, user_id: int = None) -> str:
+    async def get_response(self, message: str, user_id: int = None, system_prompt: str = None) -> str:
         """Получение ответа от модели"""
         import logging
         logger = logging.getLogger(__name__)
         
         logger.info(f"get_response called with message='{message}', user_id={user_id}")
-        system_prompt = self.create_system_prompt(message=message, user_id=user_id)
-        logger.info(f"Created system prompt, length: {len(system_prompt)}")
+        if system_prompt is None:
+            system_prompt = await self.create_system_prompt(message=message, user_id=user_id)
+        logger.info(f"Using system prompt, length: {len(system_prompt)}")
         
         async with aiohttp.ClientSession() as session:
             try:

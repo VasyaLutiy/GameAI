@@ -310,74 +310,25 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 
                 # Анализируем сообщение на наличие личной информации
                 import re
-                msg_lower = message_text.lower()
                 
                 # Проверяем на имя
-                name_patterns = [
-                    r'меня зовут\s+([^\n.,!?]+)',
-                    r'я\s+([^\n.,!?]+)',
-                    r'имя\s+([^\n.,!?]+)'
-                ]
-                for pattern in name_patterns:
-                    name_match = re.search(pattern, msg_lower)
-                    if name_match:
-                        name = name_match.group(1).strip()
-                        if len(name) > 2 and not any(word in name for word in ['есть', 'был', 'буду']):
-                            db_user.update_user_info('name', name)
-                            logger.info(f"Сохранено имя пользователя: {name}")
-                            break
+                if "меня зовут" in message_text.lower():
+                    name = message_text.lower().split("меня зовут")[-1].strip()
+                    db_user.update_user_info('name', name)
+                    logger.info(f"Сохранено имя пользователя: {name}")
                 
                 # Проверяем на возраст
-                age_patterns = [
-                    r'мне (\d+)\s*лет',
-                    r'(\d+)\s*года?\s+рождения',
-                    r'родился в (\d{4})',
-                ]
-                for pattern in age_patterns:
-                    age_match = re.search(pattern, msg_lower)
-                    if age_match:
-                        age = age_match.group(1)
-                        if pattern.endswith('рождения') or 'родился' in pattern:
-                            try:
-                                birth_year = int(age)
-                                current_year = datetime.now().year
-                                age = str(current_year - birth_year)
-                            except:
-                                continue
-                        db_user.update_user_info('age', age)
-                        logger.info(f"Сохранен возраст пользователя: {age}")
-                        break
+                age_match = re.search(r'мне (\d+) лет', message_text.lower())
+                if age_match:
+                    age = age_match.group(1)
+                    db_user.update_user_info('age', age)
+                    logger.info(f"Сохранен возраст пользователя: {age}")
                 
                 # Проверяем на род занятий
-                occupation_patterns = [
-                    r'работаю\s+([^\n.,!?]+)',
-                    r'занимаюсь\s+([^\n.,!?]+)',
-                    r'я\s+([^\n.,!?]+(?:программист|разработчик|инженер|специалист|архитектор))',
-                    r'моя профессия\s+([^\n.,!?]+)',
-                    r'моя работа\s+([^\n.,!?]+)',
-                ]
-                for pattern in occupation_patterns:
-                    occupation_match = re.search(pattern, msg_lower)
-                    if occupation_match:
-                        occupation = occupation_match.group(1).strip()
-                        db_user.update_user_info('occupation', occupation)
-                        logger.info(f"Сохранен род занятий: {occupation}")
-                        break
-                
-                # Проверяем на интересы
-                interest_patterns = [
-                    r'увлекаюсь\s+([^\n.,!?]+)',
-                    r'люблю\s+([^\n.,!?]+)',
-                    r'интересуюсь\s+([^\n.,!?]+)',
-                    r'схожу с ума от\s+([^\n.,!?]+)',
-                ]
-                for pattern in interest_patterns:
-                    interest_match = re.search(pattern, msg_lower)
-                    if interest_match:
-                        interests = interest_match.group(1).strip()
-                        db_user.update_user_info('interests', interests)
-                        logger.info(f"Сохранены интересы пользователя: {interests}")
-                        break
+                if "работаю" in message_text.lower() or "занимаюсь" in message_text.lower():
+                    occupation = message_text
+                    db_user.update_user_info('occupation', occupation)
+                    logger.info(f"Сохранен род занятий: {occupation}")
                 
                 db.commit()
             
@@ -480,65 +431,50 @@ async def summary_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 last_name=user.last_name
             )
             
-            # Получаем все необходимые данные внутри сессии
-            chat_history = list(db_user.chat_history)
-            summaries = list(db_user.summaries)
-            user_info = db_user.get_user_info()
-            current_mode = db_user.character_mode or 'default'
+            # Получаем кэшированный контекст или загружаем новый
+            if user.id not in bot.context_provider.context_cache:
+                logger.info("No cached context found, loading last context")
+                await bot.context_provider.load_last_context(user.id)
             
-            # Форматируем саммари для лучшей читаемости
-            summary_parts = []
+            cached_context = bot.context_provider.context_cache.get(user.id)
             
-            # Добавляем информацию о пользователе
-            summary_parts.append("👤 О пользователе:")
-            if user_info:
-                if 'name' in user_info:
-                    summary_parts.append(f"• Имя: {user_info['name']}")
-                if 'age' in user_info:
-                    summary_parts.append(f"• Возраст: {user_info['age']}")
-                if 'occupation' in user_info:
-                    summary_parts.append(f"• Род занятий: {user_info['occupation']}")
+            if cached_context:
+                logger.info(f"Using cached context, length: {len(cached_context)}")
+                response = (
+                    "=== Саммари диалога ===\n"
+                    f"{cached_context}\n\n"
+                    "Используйте /profile для просмотра вашего профиля"
+                )
             else:
-                summary_parts.append("• Информация пока не указана")
-            summary_parts.append("")
+                logger.info("No context available")
+                response = (
+                    "=== Саммари диалога ===\n"
+                    "История диалогов пока не накоплена\n\n"
+                    "Используйте /profile для просмотра вашего профиля"
+                )
             
-            # Добавляем статистику диалога
-            summary_parts.append("📊 Статистика диалога:")
-            summary_parts.append(f"• Всего сообщений: {len(chat_history)}")
-            summary_parts.append(f"• Создано саммари: {len(summaries)}")
-            
-            # Добавляем информацию о режимах
-            modes_used = set(msg.character_mode for msg in chat_history)
-            summary_parts.append(f"• Использовано режимов: {len(modes_used)}")
-            if modes_used:
-                summary_parts.append(f"• Режимы: {', '.join(modes_used)}")
-            summary_parts.append(f"• Текущий режим: {current_mode}")
-            
-            # Добавляем временные рамки
-            if chat_history:
-                first_msg = min(chat_history, key=lambda x: x.timestamp)
-                last_msg = max(chat_history, key=lambda x: x.timestamp)
-                summary_parts.append(f"• Первое сообщение: {first_msg.timestamp.strftime('%d.%m.%Y %H:%M')}")
-                summary_parts.append(f"• Последнее сообщение: {last_msg.timestamp.strftime('%d.%m.%Y %H:%M')}")
-            summary_parts.append("")
-            
-            # Добавляем последние сообщения
-            if chat_history:
-                summary_parts.append("📝 Последние сообщения:")
-                recent_messages = chat_history[-5:]  # Берем последние 5 сообщений
-                for msg in recent_messages:
-                    summary_parts.append(f"[{msg.timestamp.strftime('%H:%M:%S')}] User: {msg.message}")
-                    summary_parts.append(f"[{msg.timestamp.strftime('%H:%M:%S')}] Assistant ({msg.character_mode}): {msg.response}")
-                    summary_parts.append("-" * 40)
-            else:
-                summary_parts.append("📝 История диалога пока пуста")
-            
-            response = "\n".join(summary_parts)
             await update.message.reply_text(response)
             
     except Exception as e:
         logger.error(f"Error in summary command: {e}", exc_info=True)
-        logger.error("Stack trace:", exc_info=True)
+        await update.message.reply_text(
+            "Произошла ошибка при получении саммари. Попробуйте позже."
+        )
+                telegram_id=user.id,
+                username=user.username,
+                first_name=user.first_name,
+                last_name=user.last_name
+            )
+            summary_chain = db_user.get_summary_chain()
+            
+            response = (
+                f"=== Саммари диалога ===\n"
+                f"{summary_chain}\n\n"
+                f"Используйте /profile для просмотра вашего профиля"
+            )
+            await update.message.reply_text(response)
+    except Exception as e:
+        logger.error(f"Ошибка при получении саммари: {e}")
         await update.message.reply_text(
             "Произошла ошибка при получении саммари. Попробуйте позже."
         )
@@ -551,10 +487,6 @@ async def profile_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         from database import get_db, get_or_create_user
         with get_db() as db:
-            # Анализируем историю диалогов для обновления профиля
-            await bot.context_provider.extract_user_profile_from_history(user.id)
-            
-            # Получаем пользователя в новой сессии после обновления профиля
             db_user = get_or_create_user(
                 db,
                 telegram_id=user.id,
@@ -562,43 +494,19 @@ async def profile_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 first_name=user.first_name,
                 last_name=user.last_name
             )
-            
-            # Получаем всю необходимую информацию внутри сессии
             profile = db_user.get_user_profile()
             mode = db_user.character_mode or 'default'
-            user_info = db_user.get_user_info()
             
-            # Формируем расширенный ответ
-            response_parts = [
-                "👤 === Профиль пользователя ===",
-                profile
-            ]
-            
-            # Добавляем характер и стиль общения, если есть
-            character_traits = user_info.get('character_traits', '').split(', ') if user_info.get('character_traits') else []
-            communication_style = user_info.get('communication_style', '').split(', ') if user_info.get('communication_style') else []
-            
-            if character_traits or communication_style:
-                response_parts.append("\n🎭 Характер и стиль общения:")
-                if character_traits:
-                    response_parts.append("• Черты характера: " + ", ".join(character_traits))
-                if communication_style:
-                    response_parts.append("• Стиль общения: " + ", ".join(communication_style))
-            
-            # Добавляем технические детали
-            response_parts.extend([
-                "\n⚙️ Технические детали:",
-                f"• Текущий режим: {mode}",
-                f"• Telegram ID: {user.id}",
-                f"• Username: @{user.username}"
-            ])
-            
-            # Отправляем ответ
-            await update.message.reply_text("\n".join(response_parts))
-            
+            response = (
+                f"=== Профиль пользователя ===\n"
+                f"{profile}\n\n"
+                f"Текущий режим: {mode}\n"
+                f"Telegram ID: {user.id}\n"
+                f"Username: @{user.username}"
+            )
+            await update.message.reply_text(response)
     except Exception as e:
         logger.error(f"Ошибка при получении профиля: {e}")
-        logger.error("Stack trace:", exc_info=True)
         await update.message.reply_text(
             "Произошла ошибка при получении профиля. Попробуйте позже."
         )
